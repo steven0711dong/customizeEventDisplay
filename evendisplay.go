@@ -63,8 +63,10 @@ func processCloudEvents(event cloudevents.Event) {
 
 func processEvents(w http.ResponseWriter, r *http.Request) {
 	atomic.AddUint64(&connCt, 1)
-	d, _ := strconv.Atoi(delay)
-	time.Sleep(time.Second * time.Duration(d))
+	if delay != "0" {
+		d, _ := strconv.Atoi(delay)
+		time.Sleep(time.Second * time.Duration(d))
+	}
 	partitionAndOffset := r.Header.Get("Ce-Id")
 	eventInfoArray := strings.Split(partitionAndOffset, "/")
 	topic := strings.Split(r.Header.Get("Ce-Source"), "#")[1]
