@@ -35,6 +35,7 @@ var logger *zap.SugaredLogger
 var forward = os.Getenv("forward") == "true"
 var displayConcurrentConnections = os.Getenv("displayConcurrentConnections") == "true"
 var cloudevent = os.Getenv("cloudevent") == "true"
+var print = os.Getenv("print") == "true"
 
 func getenv(key, fallback string) string {
 	value := os.Getenv(key)
@@ -55,7 +56,11 @@ func processCloudEvents(event cloudevents.Event) {
 	source := kafkasourcearray[len(kafkasourcearray)-1]
 	partition, offset := strings.Split(eventInfoArray[0], ":")[1], strings.Split(eventInfoArray[1], ":")[1]
 	if forward {
-		appendToData2(source, topic, partition, offset)
+		appendToData(source, topic, partition, offset)
+	}
+	printout := fmt.Sprintf("%s/%s/%s/%s", source, topic, partition, offset)
+	if print {
+		fmt.Println(printout)
 	}
 	atomic.AddUint64(&connCt, ^uint64(1-1))
 }
@@ -74,14 +79,17 @@ func processEvents(w http.ResponseWriter, r *http.Request) {
 	source := kafkasourcearray[len(kafkasourcearray)-1]
 	partition, offset := strings.Split(eventInfoArray[0], ":")[1], strings.Split(eventInfoArray[1], ":")[1]
 	if forward {
-		appendToData2(source, topic, partition, offset)
+		appendToData(source, topic, partition, offset)
 	}
 	printout := fmt.Sprintf("%s/%s/%s/%s", source, topic, partition, offset)
+	if print {
+		fmt.Println(printout)
+	}
 	w.Write([]byte(printout))
 	atomic.AddUint64(&connCt, ^uint64(1-1))
 }
 
-func appendToData2(source string, t string, p string, o string) {
+func appendToData(source string, t string, p string, o string) {
 	msg1.Mu.Lock()
 	s := source + "/" + t + "/" + p + "/" + o + "/" + "200"
 	msg1.data = append(msg1.data, s)
@@ -92,14 +100,14 @@ func appendToData2(source string, t string, p string, o string) {
 func main() {
 	ctx, _ := context.WithCancel(context.Background())
 	logger = logging.FromContext(ctx)
-	logger.Infof("Env vars: displayConcurrentConnection: %t delay: %s cloudevent: %t forward: %t delay: %s scraper: %s \n", displayConcurrentConnections, delay, cloudevent, forward, scraperAdd)
+	logger.Infof("Env vars: displayConcurrentConnection: %t delay: %s cloudevent: %t forward: %t scraper: %s print %t \n", displayConcurrentConnections, delay, cloudevent, forward, scraperAdd, print)
 
 	if displayConcurrentConnections {
 		go displayCon()
 	}
 
 	if forward {
-		go sendResult2()
+		go sendResult()
 	}
 
 	if cloudevent {
@@ -120,7 +128,7 @@ func main() {
 	}
 }
 
-func sendResult2() {
+func sendResult() {
 	for {
 		time.Sleep(time.Second * 5)
 		msg1.Mu.Lock()
@@ -131,6 +139,7 @@ func sendResult2() {
 			logger.Infof("Error streaming data: %s", err.Error())
 			return
 		}
+
 		if scraperAdd == "" {
 			logger.Info("scraper address was not correct configured, check env setting for scraper")
 			return
@@ -162,39 +171,3 @@ func displayCon() {
 		logger.Infof("Host: %s: we have %d concurrent connections\n", os.Getenv("HOSTNAME"), connCt)
 	}
 }
-
-// var msg struct {
-// 	data          map[string](map[int](map[string]time.Time))
-// 	Mu            sync.Mutex
-// 	totalMessages int
-// 	dups          int
-// 	timestamp     time.Time
-// }
-
-// func appendToData(topic string, partition int, offset string, t time.Time) {
-// 	msg.Mu.Lock()
-// 	if partitions, found := msg.data[topic]; found {
-// 		if offsets, ok := partitions[partition]; ok {
-// 			if _, ok := offsets[offset]; ok {
-// 				msg.dups += 1
-// 			} else {
-// 				offsets[offset] = t
-// 				msg.totalMessages += 1
-// 			}
-// 		} else {
-// 			newSetOfOffsets := make(map[string]time.Time)
-// 			newSetOfOffsets[offset] = t
-// 			partitions[partition] = newSetOfOffsets
-// 			msg.totalMessages += 1
-// 		}
-// 	} else {
-// 		newSetOfOffsets := make(map[string]time.Time)
-// 		newSetOfOffsets[offset] = t
-// 		newPartitions := make(map[int](map[string]time.Time))
-// 		newPartitions[partition] = newSetOfOffsets
-// 		msg.data[topic] = newPartitions
-// 		msg.totalMessages += 1
-// 	}
-// 	msg.timestamp = time.Now()
-// 	msg.Mu.Unlock()
-// }
